@@ -1,11 +1,9 @@
 #include "fvupdatewindow.h"
 #include "ui_fvupdatewindow.h"
-#include "fvupdater.h"
 #include "fvavailableupdate.h"
 #include <QApplication>
 #include <QCloseEvent>
 #include <QDebug>
-
 
 FvUpdateWindow::FvUpdateWindow(QWidget *parent) :
 	QWidget(parent),
@@ -23,12 +21,9 @@ FvUpdateWindow::FvUpdateWindow(QWidget *parent) :
 	m_ui->newVersionIsAvailableLabel->setText(newVersString);
 
 	// Connect buttons
-	connect(m_ui->installUpdateButton, SIGNAL(clicked()),
-			FvUpdater::sharedUpdater(), SLOT(InstallUpdate()));
-	connect(m_ui->skipThisVersionButton, SIGNAL(clicked()),
-			FvUpdater::sharedUpdater(), SLOT(SkipUpdate()));
-	connect(m_ui->remindMeLaterButton, SIGNAL(clicked()),
-			FvUpdater::sharedUpdater(), SLOT(RemindMeLater()));
+	connect(m_ui->installUpdateButton, SIGNAL(clicked()), this, SLOT(installClicked()));
+	connect(m_ui->skipThisVersionButton, SIGNAL(clicked()), this, SLOT(skipClicked()));
+	connect(m_ui->remindMeLaterButton, SIGNAL(clicked()), this, SLOT(remindClicked()));
 }
 
 FvUpdateWindow::~FvUpdateWindow()
@@ -37,25 +32,90 @@ FvUpdateWindow::~FvUpdateWindow()
 	delete m_ui;
 }
 
-bool FvUpdateWindow::UpdateWindowWithCurrentProposedUpdate()
+void FvUpdateWindow::closeEvent(QCloseEvent* event)
 {
-	FvAvailableUpdate* proposedUpdate = FvUpdater::sharedUpdater()->GetProposedUpdate();
+	if(!m_ui->progressBar->isEnabled())
+		hide();
+	event->ignore();
+}
+
+void FvUpdateWindow::installClicked()
+{
+	if(m_ui->progressBar->isEnabled())
+	{
+		emit cancelRequested();
+		setProgressBarState(false);
+		m_ui->progressBar->setValue(0);
+		m_ui->progressBar->setFormat(tr("Canceled"));
+	}
+	else
+	{
+		emit installRequested();
+	}
+}
+
+void FvUpdateWindow::skipClicked()
+{
+	emit skipInstallRequested();
+	hide();
+}
+
+void FvUpdateWindow::remindClicked()
+{
+	emit remindLaterRequested();
+	hide();
+}
+
+void FvUpdateWindow::onProgress( uint percents )
+{
+	setProgressBarState(true);
+	m_ui->progressBar->setValue(percents);
+}
+
+void FvUpdateWindow::onShowWindow(FvAvailableUpdate* proposedUpdate)
+{
 	if (! proposedUpdate) {
-		return false;
+		return;
 	}
 
+	show();
+
 	QString downloadString = m_ui->wouldYouLikeToDownloadLabel->text()
-			.arg(QApplication::applicationName(), proposedUpdate->GetEnclosureVersion(), QApplication::applicationVersion());
+		.arg(QApplication::applicationName(), proposedUpdate->GetEnclosureVersion(), QApplication::applicationVersion());
 	m_ui->wouldYouLikeToDownloadLabel->setText(downloadString);
 
 	m_ui->releaseNotesWebView->stop();
 	m_ui->releaseNotesWebView->load(proposedUpdate->GetReleaseNotesLink());
 
-	return true;
+	return;
 }
 
-void FvUpdateWindow::closeEvent(QCloseEvent* event)
+void FvUpdateWindow::onFinished()
 {
-	FvUpdater::sharedUpdater()->updaterWindowWasClosed();
-	event->accept();
+	setProgressBarState(false);
+}
+
+void FvUpdateWindow::setProgressBarState( bool isActive )
+{
+	if(!isActive)
+	{
+		m_ui->installUpdateButton->setText(tr("Install Update"));
+	}
+	else
+	{
+		m_ui->installUpdateButton->setText(tr("Cancel"));
+	}
+
+	m_ui->skipThisVersionButton->setEnabled(!isActive);
+	m_ui->remindMeLaterButton->setEnabled(!isActive);
+	m_ui->prgressLabel->setEnabled(isActive);
+	m_ui->progressBar->setEnabled(isActive);
+	m_ui->progressBar->setFormat("%p%");
+}
+
+void FvUpdateWindow::onFailed( QString msg )
+{
+	setProgressBarState(false);
+	m_ui->progressBar->setValue(0);
+	m_ui->progressBar->setFormat("Failed");
 }

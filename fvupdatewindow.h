@@ -8,6 +8,8 @@ namespace Ui {
 class FvUpdateWindow;
 }
 
+class FvAvailableUpdate;
+
 class FvUpdateWindow : public QWidget
 {
 	Q_OBJECT
@@ -17,9 +19,29 @@ public:
 	~FvUpdateWindow();
 
 	// Update the current update proposal from FvUpdater
-	bool UpdateWindowWithCurrentProposedUpdate();
-
 	void closeEvent(QCloseEvent* event);
+
+private:
+	void setProgressBarState( bool isActive );
+
+signals:
+	void installRequested();
+	void skipInstallRequested();
+	void remindLaterRequested();
+	void cancelRequested();
+	void closed();
+
+public slots:
+	void onProgress(uint percents);
+	void onFinished();
+	void onFailed(QString msg);
+	void onShowWindow(FvAvailableUpdate* proposedUpdate);
+
+private slots:
+	void installClicked();
+	void skipClicked();
+	void remindClicked();
+	
 
 private:
 	Ui::FvUpdateWindow*	m_ui;

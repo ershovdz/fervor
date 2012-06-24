@@ -1,9 +1,8 @@
 #include "fvupdater.h"
-#include "fvupdatewindow.h"
-#include "fvupdateconfirmdialog.h"
 #include "fvplatform.h"
 #include "fvignoredversions.h"
 #include "fvavailableupdate.h"
+#include "fvdownloadmanager.h"
 #include <QApplication>
 #include <QtNetwork>
 #include <QMessageBox>
@@ -17,23 +16,22 @@
 #	error "FV_APP_VERSION is undefined (must have been defined by Fervor.pri)"
 #endif
 
-
 #ifdef FV_DEBUG
 	// Unit tests
 #	include "fvversioncomparatortest.h"
 #endif
 
-
 FvUpdater* FvUpdater::m_Instance = 0;
-
 
 FvUpdater* FvUpdater::sharedUpdater()
 {
 	static QMutex mutex;
-	if (! m_Instance) {
+	if (! m_Instance) 
+	{
 		mutex.lock();
 
-		if (! m_Instance) {
+		if (! m_Instance) 
+		{
 			m_Instance = new FvUpdater;
 		}
 
@@ -52,15 +50,12 @@ void FvUpdater::drop()
 	mutex.unlock();
 }
 
-FvUpdater::FvUpdater() : QObject(0)
+FvUpdater::FvUpdater() 
+	: QObject(0)
+	, m_reply(nullptr)
+	, m_proposedUpdate(nullptr)
 {
-	m_reply = 0;
-	m_updaterWindow = 0;
-	m_updateConfirmationDialog = 0;
-	m_proposedUpdate = 0;
-
-	// Translation mechanism
-	installTranslator();
+	createDownloadManager();
 
 #ifdef FV_DEBUG
 	// Unit tests
@@ -68,90 +63,21 @@ FvUpdater::FvUpdater() : QObject(0)
 	test->runAll();
 	delete test;
 #endif
-
 }
 
 FvUpdater::~FvUpdater()
 {
-	if (m_proposedUpdate) {
+	if (m_proposedUpdate) 
+	{
 		delete m_proposedUpdate;
 		m_proposedUpdate = 0;
 	}
-
-	hideUpdateConfirmationDialog();
-	hideUpdaterWindow();
-}
-
-void FvUpdater::installTranslator()
-{
-	QTranslator translator;
-	QString locale = QLocale::system().name();
-	translator.load(QString("fervor_") + locale);
-	QTextCodec::setCodecForTr(QTextCodec::codecForName("utf8"));
-	qApp->installTranslator(&translator);
 }
 
 void FvUpdater::showUpdaterWindowUpdatedWithCurrentUpdateProposal()
 {
-	// Destroy window if already exists
-	hideUpdaterWindow();
-
-	// Create a new window
-	m_updaterWindow = new FvUpdateWindow();
-	m_updaterWindow->UpdateWindowWithCurrentProposedUpdate();
-	m_updaterWindow->show();
+	emit updateAvailable(GetProposedUpdate());
 }
-
-void FvUpdater::hideUpdaterWindow()
-{
-	if (m_updaterWindow) {
-		if (! m_updaterWindow->close()) {
-			qWarning() << "Update window didn't close, leaking memory from now on";
-		}
-
-		// not deleting because of Qt::WA_DeleteOnClose
-
-		m_updaterWindow = 0;
-	}
-}
-
-void FvUpdater::updaterWindowWasClosed()
-{
-	// (Re-)nullify a pointer to a destroyed QWidget or you're going to have a bad time.
-	m_updaterWindow = 0;
-}
-
-
-void FvUpdater::showUpdateConfirmationDialogUpdatedWithCurrentUpdateProposal()
-{
-	// Destroy dialog if already exists
-	hideUpdateConfirmationDialog();
-
-	// Create a new window
-	m_updateConfirmationDialog = new FvUpdateConfirmDialog();
-	m_updateConfirmationDialog->UpdateWindowWithCurrentProposedUpdate();
-	m_updateConfirmationDialog->show();
-}
-
-void FvUpdater::hideUpdateConfirmationDialog()
-{
-	if (m_updateConfirmationDialog) {
-		if (! m_updateConfirmationDialog->close()) {
-			qWarning() << "Update confirmation dialog didn't close, leaking memory from now on";
-		}
-
-		// not deleting because of Qt::WA_DeleteOnClose
-
-		m_updateConfirmationDialog = 0;
-	}
-}
-
-void FvUpdater::updateConfirmationDialogWasClosed()
-{
-	// (Re-)nullify a pointer to a destroyed QWidget or you're going to have a bad time.
-	m_updateConfirmationDialog = 0;
-}
-
 
 void FvUpdater::SetFeedURL(QUrl feedURL)
 {
@@ -173,12 +99,11 @@ FvAvailableUpdate* FvUpdater::GetProposedUpdate()
 	return m_proposedUpdate;
 }
 
-
 void FvUpdater::InstallUpdate()
 {
 	qDebug() << "Install update";
-
-	showUpdateConfirmationDialogUpdatedWithCurrentUpdateProposal();
+	emit progress(0);
+	m_downloadManager->startDownload(GetProposedUpdate()->GetEnclosureUrl());
 }
 
 void FvUpdater::SkipUpdate()
@@ -193,47 +118,17 @@ void FvUpdater::SkipUpdate()
 
 	// Start ignoring this particular version
 	FVIgnoredVersions::IgnoreVersion(proposedUpdate->GetEnclosureVersion());
-
-	hideUpdaterWindow();
-	hideUpdateConfirmationDialog();	// if any; shouldn't be shown at this point, but who knows
 }
 
 void FvUpdater::RemindMeLater()
 {
 	qDebug() << "Remind me later";
-
-	hideUpdaterWindow();
-	hideUpdateConfirmationDialog();	// if any; shouldn't be shown at this point, but who knows
 }
 
-void FvUpdater::UpdateInstallationConfirmed()
+void FvUpdater::CancelUpdate()
 {
-	qDebug() << "Confirm update installation";
-
-	FvAvailableUpdate* proposedUpdate = GetProposedUpdate();
-	if (! proposedUpdate) {
-		qWarning() << "Proposed update is NULL (shouldn't be at this point)";
-		return;
-	}
-
-	// Open a link
-	if (! QDesktopServices::openUrl(proposedUpdate->GetEnclosureUrl())) {
-		showErrorDialog(tr("Unable to open this link in a browser. Please do it manually."), true);
-		return;
-	}
-
-	hideUpdaterWindow();
-	hideUpdateConfirmationDialog();
+	m_downloadManager->cancelDownload();
 }
-
-void FvUpdater::UpdateInstallationNotConfirmed()
-{
-	qDebug() << "Do not confirm update installation";
-
-	hideUpdateConfirmationDialog();	// if any; shouldn't be shown at this point, but who knows
-	// leave the "update proposal window" inact
-}
-
 
 bool FvUpdater::CheckForUpdates(bool silentAsMuchAsItCouldGet)
 {
@@ -284,7 +179,6 @@ bool FvUpdater::CheckForUpdatesNotSilent()
 	return CheckForUpdates(false);
 }
 
-
 void FvUpdater::startDownloadFeed(QUrl url)
 {
 	m_xml.clear();
@@ -292,7 +186,7 @@ void FvUpdater::startDownloadFeed(QUrl url)
 	m_reply = m_qnam.get(QNetworkRequest(url));
 
 	connect(m_reply, SIGNAL(readyRead()), this, SLOT(httpFeedReadyRead()));
-	connect(m_reply, SIGNAL(downloadProgress(qint64, qint64)), this, SLOT(httpFeedUpdateDataReadProgress(qint64, qint64)));
+	connect(m_reply, SIGNAL(downloadUpdateProgress(qint64, qint64)), this, SLOT(httpFeedUpdateDataReadProgress(qint64, qint64)));
 	connect(m_reply, SIGNAL(finished()), this, SLOT(httpFeedDownloadFinished()));
 }
 
@@ -392,25 +286,24 @@ bool FvUpdater::xmlParseFeed()
 				QXmlStreamAttributes attribs = m_xml.attributes();
 
 				if (attribs.hasAttribute("fervor:platform")) {
-					xmlEnclosurePlatform = attribs.value("fervor:platform").toString().trimmed();
-
-					if (FvPlatform::CurrentlyRunningOnPlatform(xmlEnclosurePlatform)) {
-
+					QString platform = attribs.value("fervor:platform").toString().trimmed();
+					
+					if (FvPlatform::CurrentlyRunningOnPlatform(platform)) {
+						xmlEnclosurePlatform = platform;
 						if (attribs.hasAttribute("url")) {
 							xmlEnclosureUrl = attribs.value("url").toString().trimmed();
 						} else {
 							xmlEnclosureUrl = "";
 						}
+
 						if (attribs.hasAttribute("fervor:version")) {
 							xmlEnclosureVersion = attribs.value("fervor:version").toString().trimmed();
-						} else {
-							xmlEnclosureVersion = "";
-						}
-						if (attribs.hasAttribute("sparkle:version")) {
+						} else if (attribs.hasAttribute("sparkle:version")) {
 							xmlEnclosureVersion = attribs.value("sparkle:version").toString().trimmed();
 						} else {
 							xmlEnclosureVersion = "";
 						}
+
 						if (attribs.hasAttribute("length")) {
 							xmlEnclosureLength = attribs.value("length").toString().toLong();
 						} else {
@@ -421,13 +314,9 @@ bool FvUpdater::xmlParseFeed()
 						} else {
 							xmlEnclosureType = "";
 						}
-
 					}
-
 				}
-
 			}
-
 		} else if (m_xml.isEndElement()) {
 
 			if (m_xml.name() == "item") {
@@ -463,14 +352,12 @@ bool FvUpdater::xmlParseFeed()
 				xmlPubDate += m_xml.text().toString().trimmed();
 
 			}
-
 		}
 
 		if (m_xml.error() && m_xml.error() != QXmlStreamReader::PrematureEndOfDocumentError) {
 
 			showErrorDialog(tr("Feed parsing failed: %1 %2.").arg(QString::number(m_xml.lineNumber()), m_xml.errorString()), false);
 			return false;
-
 		}
 	}
 
@@ -518,11 +405,10 @@ bool FvUpdater::searchDownloadedFeedForUpdates(QString xmlTitle,
 		qDebug() << "Version '" << xmlEnclosureVersion << "' is ignored, too old or something like that.";
 
 		showInformationDialog(tr("No updates were found."), false);
-
+		emit noUpdates();
 		return true;	// Things have succeeded when you think of it.
 	}
-
-
+	
 	//
 	// Success! At this point, we have found an update that can be proposed
 	// to the user.
@@ -543,7 +429,6 @@ bool FvUpdater::searchDownloadedFeedForUpdates(QString xmlTitle,
 
 	// Show "look, there's an update" window
 	showUpdaterWindowUpdatedWithCurrentUpdateProposal();
-
 	return true;
 }
 
@@ -579,3 +464,58 @@ void FvUpdater::showInformationDialog(QString message, bool showEvenInSilentMode
 	dlInformationMsgBox.setInformativeText(message);
 	dlInformationMsgBox.exec();
 }
+
+void FvUpdater::downloadUpdateFailed( const QUrl&, const QString& msg)
+{
+	emit failed(msg);
+}
+
+void FvUpdater::downloadUpdateFinished( const QUrl&, const QString& fileName)
+{
+	emit finished();
+	
+	//m_updaterWindow->setProgressBarState(false);
+	//m_updaterWindow->setDownloadProgress(0);
+
+	QProcess installerProcess;
+	installerProcess.startDetached(fileName);
+
+	emit closeAppToRunInstaller();
+}
+
+void FvUpdater::downloadUpdateProgress( const QUrl&, qint64 receivedBytes, qint64 totalBytes)
+{
+	uint percents = ((float)receivedBytes/totalBytes) * 100;
+	emit progress(percents);
+	//m_updaterWindow->setDownloadProgress(progress);
+}
+
+void FvUpdater::createDownloadManager()
+{
+	m_downloadManager = new FvDownloadManager(this);
+
+	connect( m_downloadManager
+		, SIGNAL(progress(const QUrl&, qint64, qint64))
+		, this
+		, SLOT(downloadUpdateProgress(const QUrl&, qint64, qint64)) );
+
+	connect( m_downloadManager
+		, SIGNAL(finished(const QUrl&, const QString&))
+		, this
+		, SLOT(downloadUpdateFinished(const QUrl&, const QString&)) );
+
+	connect( m_downloadManager
+		, SIGNAL(error(const QUrl&, const QString&))
+		, this
+		, SLOT(downloadUpdateFailed(const QUrl&, const QString&)) );
+}
+
+
+
+
+
+
+
+
+
+

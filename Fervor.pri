@@ -4,7 +4,6 @@ DEFINES += FV_APP_NAME=\\\"$$TARGET\\\"
 DEFINES += FV_APP_VERSION=\\\"$$VERSION\\\"
 
 
-
 # FIXME unit tests
 #DEFINES += FV_DEBUG=1
 #DEPENDPATH += "$$PWD/tests/"
@@ -12,7 +11,6 @@ DEFINES += FV_APP_VERSION=\\\"$$VERSION\\\"
 #CONFIG += qtestlib
 #SOURCES += tests/fvversioncomparatortest.cpp
 #HEADERS += tests/fvversioncomparatortest.h
-
 
 
 DEPENDPATH += "$$PWD"
@@ -24,7 +22,7 @@ SOURCES += fvupdatewindow.cpp \
 	fvplatform.cpp \
 	fvignoredversions.cpp \
 	fvavailableupdate.cpp \
-	fvupdateconfirmdialog.cpp
+	fvdownloadmanager.cpp
 
 HEADERS += fvupdatewindow.h \
 	fvupdater.h \
@@ -32,10 +30,9 @@ HEADERS += fvupdatewindow.h \
 	fvplatform.h \
 	fvignoredversions.h \
 	fvavailableupdate.h \
-	fvupdateconfirmdialog.h
+	fvdownloadmanager.h
 
-FORMS += fvupdatewindow.ui \
-	fvupdateconfirmdialog.ui
+FORMS += fvupdatewindow.ui
 
 TRANSLATIONS += fervor_lt.ts
 CODECFORTR = UTF-8
